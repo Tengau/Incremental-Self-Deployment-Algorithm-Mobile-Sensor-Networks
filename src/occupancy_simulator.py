@@ -1,26 +1,45 @@
 import numpy as np
 import cv2
 from pathlib import Path
-from config_parser import load_config
+import logging
 import matplotlib.pyplot as plt
-from occupancy_tz import OccupancyGrid
+from config_parser import load_config
 
+# Configure logger
+logger = logging.getLogger(__name__)
+logger.setLevel(logging.INFO)
+# Create console handler and set level
+ch = logging.StreamHandler()
+ch.setLevel(logging.INFO)
+# Create formatter
+formatter = logging.Formatter("%(name)s - %(levelname)s - %(message)s")
+# Add formatter to ch
+ch.setFormatter(formatter)
+# Add ch to logger
+logger.addHandler(ch)
 
-# utils move later
-def distance(p1, p2):
-    return np.linalg.norm(np.array(p1) - np.array(p2))
+map_vis = None  # debug
 
 
 class OccupancyGridSimulator:
-    """Represents an occupancy grid for robotic mapping."""
+    """Represents an occupancy grid simulator for robotic mapping."""
 
     def __init__(self, image_file, starting_pose):
+        global map_vis  # debug
+
         self.gt_map = self.read_image(image_file)
+        map_vis = self.gt_map
         self.robot_pos = starting_pose  # collection of all robots
         self.current_robot_pos = starting_pose
-        self.curr_map = None
+        self.curr_map = 0.5 * np.ones_like(self.gt_map)
         self.px_per_meter = 10.0  # add to config later
         self.sensor_range = 5.0
+        self.map_h, self.map_w = self.gt_map.shape
+        self.min_x, self.min_y = 0, 0
+
+        self.curr_circle_points = None
+        # start it off -->
+        self.get_laser_readings(starting_pose)
 
     def read_image(self, file_name):
         image = cv2.imread(file_name, flags=cv2.IMREAD_GRAYSCALE)
@@ -32,6 +51,7 @@ class OccupancyGridSimulator:
         map = np.where(image != 0, map, 1.0)
         # plt.imshow(map, cmap="gray_r")
         # plt.colorbar()
+
         return map
 
     def plot_test_map(self, map):
@@ -39,17 +59,19 @@ class OccupancyGridSimulator:
         plt.imshow(map, cmap="gray_r")
         plt.colorbar()
 
-    def plot_points(self, points, color):
+    def plot_points(self, points, color, point_size=5):
         # points (N, 2)
         # plot points
+        logger.debug(f"Points shape: {points.shape}")
+        logger.debug(f"Points: {points}")
         plt.scatter(
-            x=points[:, 0] * self.px_per_meter,
-            y=points[:, 1] * self.px_per_meter,
-            s=5,
+            x=points[:, 0],
+            y=points[:, 1],
+            s=point_size,
             c=color,
             label="Robots",
         )
-        plt.show()
+        # plt.show()
 
     def bresenham_line(self, x0, y0, x1, y1):
         """
@@ -104,55 +126,58 @@ class OccupancyGridSimulator:
         circle_points = self.generate_circle_points(
             pose, self.sensor_range * self.px_per_meter, num_points=180
         )
+        self.plot_points(circle_points, "b", 0.1)
         # run bresenham_line on the 360 points from the pose or make a
         # diff algorithm that stops when it hits an obstacle
         obstacle_point = []
         for point in circle_points:
-            print(
-                "run alg on: ", pose[0], pose[1], np.floor(point[0]), np.floor(point[1])
+            logger.debug(
+                f"Run algorithm on: {pose[0]}, {pose[1]}, {np.floor(point[0])}, {np.floor(point[1])}"
             )
 
             points_in_between = self.bresenham_line(
                 pose[0], pose[1], np.floor(point[0]), np.floor(point[1])
             )  # double check resolution
-            print("run alg on: ", pose[0], pose[1], point[0], point[1])
-            print(len(points_in_between))
+            logger.debug(f"Length of points in between: {len(points_in_between)}")
 
             # filter for obstacle hits (there should only be a few)
-            # found_obstacle = False
             for points in points_in_between:
-                if self.gt_map[(int)(points[0]), (int)(points[1])] == 1.0:
-                    # dist = distance(points, pose)
-                    # obstacle_point.append((points, dist))
-                    obstacle_point.append((points))
-                    print(len(obstacle_point))
-                    break
+                # obst
+                # make sure the point youre checking is in this range
+                if (
+                    self.map_w > (int)(points[0]) > self.min_x
+                    and self.map_h > (int)(points[1]) > self.min_y
+                ):
+                    if self.gt_map[(int)(points[1]), (int)(points[0])] == 1.0:
+                        logger.debug(f"Obstacle found at {points}")
+                        obstacle_point.append((points))
+                        logger.debug(f"Number of obstacles: {len(obstacle_point)}")
+                        self.curr_map[(int)(points[1]), (int)(points[0])] = 1.0
+                        break
+                    else:  # free
+                        self.curr_map[(int)(points[1]), (int)(points[0])] = 0.0
+
             # make sure to handle if there are no obstacle hits
             if not obstacle_point:
-                print(f"no obstacles found for {pose[0]}, {pose[1]}")
-        print(obstacle_point)
-        print("length")
-        print(len(obstacle_point))
-        # keep the full bresenham_line returned values to save time and compute
-
-        # calculate and sort obstacles by distance so you can keep the shortest distance
-        # thats your obstacle
-
-        # the area in between the shortest distance obstacle point is your free space and the area behind is unknown
-        # run therest like normal
-        # print(obstacle_point)
-        pass
+                logger.debug(f"No obstacles found for {pose[0]}, {pose[1]}")
 
     def update(self, new_pose):
         # will need to run paper algorithm before this to find new pose
-        self.current_robot_pos = new_pose
+        self.current_robot_pos = new_pose.reshape((1, 2))
         self.robot_pos = np.vstack((self.robot_pos, new_pose))
-
         # update map
         self.get_laser_readings(new_pose)
 
+        plt.imshow(self.curr_map, cmap="gray_r")
+        plt.colorbar(shrink=0.7, pad=0.02)
+
         self.plot_points(self.robot_pos, "g")
         self.plot_points(self.current_robot_pos, "r")
+        plt.title("Robot Position Map", fontsize=16, fontweight="bold")
+        plt.xlabel("X Position", fontsize=12)
+        plt.ylabel("Y Position", fontsize=12)
+        plt.tight_layout()
+        plt.show()
 
 
 parent_dir = Path(__file__).resolve().parent.parent
@@ -163,23 +188,27 @@ def main():
     config_path = Path(CONFIG_FILENAME)
     config = load_config(config_path)
     parent_dir = Path(__file__).resolve().parent.parent
-    print(parent_dir)
-    print(config["input"]["input_map"])
+    logger.info(f"Parent directory: {parent_dir}")
+    logger.info(f"Input map: {config['input']['input_map']}")
     file_name = parent_dir / config["input"]["input_map"]
 
-    # gt_map = read_image(file_name)
-    # current_map = get_laser_readings((10.0, 10.0), gt_map, 5)
+    occ_sim = OccupancyGridSimulator(file_name, starting_pose=np.array([800.0, 700.0]))
 
-    # plot_test_map(gt_map)
-    # plt.show()
+    poses = [
+        np.array([750.0, 700.0]),
+        np.array([700.0, 700.0]),
+        np.array([650.0, 700.0]),
+        np.array([600.0, 650.0]),
+    ]
 
-    # robot_pos = np.array([[800.0, 700.0], [800.0 + 5 * 10, 700]])
-    # plot_points(robot_pos)
+    # Run the simulation
+    for pose in poses:
+        occ_sim.update(new_pose=pose)
 
-    # occ_map = OccupancyGrid(gt_map.shape, config, gt_map)
-    occ_sim = OccupancyGridSimulator(file_name, starting_pose=np.array([800.0, 700]))
-
-    occ_sim.update(new_pose=np.array([750.0 / 10, 700.0 / 10]))
+    # occ_sim.update(new_pose=np.array([750.0, 700.0]))
+    # occ_sim.update(new_pose=np.array([700.0, 700.0]))
+    # occ_sim.update(new_pose=np.array([800.0, 650.0]))
+    # occ_sim.update(new_pose=np.array([700.0, 650.0]))
 
 
 if __name__ == "__main__":

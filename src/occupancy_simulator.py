@@ -295,6 +295,33 @@ def find_random_outline_location(curr_map, num_locations=1):
     return random_outline_locations
 
 
+def find_random_free_location(map, num_locations=1):
+    """
+    Find random locations within the free space (white, value 0) of the map.
+
+    Args:
+        num_locations (int): Number of random locations to find
+
+    Returns:
+        np.array: Array of shape (num_locations, 2) containing [x, y] coordinates
+    """
+    # Find all free spaces (where value is 0)
+    free_spaces = np.where(map == 0.0)
+    indices = np.column_stack((free_spaces[0], free_spaces[1]))
+
+    if indices.shape[0] == 0:
+        print("No free spaces found in the map")
+        return None
+
+    # Select random indices
+    random_indices = np.random.choice(
+        indices.shape[0], size=num_locations, replace=False
+    )
+    random_locations = indices[random_indices]
+
+    return random_locations
+
+
 def main():
     config_path = Path(CONFIG_FILENAME)
     config = load_config(config_path)
@@ -304,7 +331,9 @@ def main():
     file_name = parent_dir / config["input"]["input_map"]
     t_total = 50
     occ_sim = OccupancyGridSimulator(file_name, starting_pose=np.array([800.0, 700.0]))
-    mode = "boundary_alg"
+
+    # mode = "boundary_alg"
+    mode = "random"
 
     # replace with heuristic code:
     # poses = [
@@ -332,6 +361,16 @@ def main():
             occ_sim.save_img(f"../data/output/{mode}/{mode}_{timestep}.png")
 
         occ_sim.save_img("simulator_test.png")
+    elif mode == "random":
+        for timestep in range(t_total):  # poses:
+            new_map = occ_sim.get_curr_map()
+            new_pose = find_random_free_location(new_map, 1)
+            # print("np", new_pose.shape)
+            # print(new_pose)
+            occ_sim.update(new_pose=np.array([new_pose[0][1], new_pose[0][0]]))
+            occ_sim.save_img(f"../data/output/{mode}/{mode}_{timestep}.png")
+
+    occ_sim.save_img(f"../data/output/{mode}_final.png")
 
 
 if __name__ == "__main__":

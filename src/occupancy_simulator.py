@@ -18,17 +18,17 @@ ch.setFormatter(formatter)
 # Add ch to logger
 logger.addHandler(ch)
 
-map_vis = None  # debug
+# map_vis = None  # debug
 
 
 class OccupancyGridSimulator:
     """Represents an occupancy grid simulator for robotic mapping."""
 
     def __init__(self, image_file, starting_pose):
-        global map_vis  # debug
+        # global map_vis  # debug
 
         self.gt_map = self.read_image(image_file)
-        map_vis = self.gt_map
+        # map_vis = self.gt_map # debug
         self.robot_pos = starting_pose  # collection of all robots
         self.current_robot_pos = starting_pose
         self.curr_map = 0.5 * np.ones_like(self.gt_map)
@@ -162,6 +162,8 @@ class OccupancyGridSimulator:
                 logger.debug(f"No obstacles found for {pose[0]}, {pose[1]}")
 
     def update(self, new_pose):
+
+        plt.clf()
         # will need to run paper algorithm before this to find new pose
         self.current_robot_pos = new_pose.reshape((1, 2))
         self.robot_pos = np.vstack((self.robot_pos, new_pose))
@@ -169,15 +171,21 @@ class OccupancyGridSimulator:
         self.get_laser_readings(new_pose)
 
         plt.imshow(self.curr_map, cmap="gray_r")
+        plt.imshow(self.gt_map, cmap="gray_r", alpha=0.2)
         plt.colorbar(shrink=0.7, pad=0.02)
 
         self.plot_points(self.robot_pos, "g")
         self.plot_points(self.current_robot_pos, "r")
+
         plt.title("Robot Position Map", fontsize=16, fontweight="bold")
         plt.xlabel("X Position", fontsize=12)
         plt.ylabel("Y Position", fontsize=12)
         plt.tight_layout()
-        plt.show()
+        plt.pause(interval=1.0)
+
+    def save_img(self, output_name):
+        logger.info("Saving the figure to path {}".format(output_name))
+        plt.savefig(output_name)  # Save the figure to a file.
 
 
 parent_dir = Path(__file__).resolve().parent.parent
@@ -194,21 +202,21 @@ def main():
 
     occ_sim = OccupancyGridSimulator(file_name, starting_pose=np.array([800.0, 700.0]))
 
+    # replace with heuristic code:
     poses = [
         np.array([750.0, 700.0]),
         np.array([700.0, 700.0]),
         np.array([650.0, 700.0]),
         np.array([600.0, 650.0]),
+        np.array([550.0, 660.0]),
+        np.array([500.0, 650.0]),
     ]
 
     # Run the simulation
     for pose in poses:
         occ_sim.update(new_pose=pose)
 
-    # occ_sim.update(new_pose=np.array([750.0, 700.0]))
-    # occ_sim.update(new_pose=np.array([700.0, 700.0]))
-    # occ_sim.update(new_pose=np.array([800.0, 650.0]))
-    # occ_sim.update(new_pose=np.array([700.0, 650.0]))
+    occ_sim.save_img("simulator_test.png")
 
 
 if __name__ == "__main__":

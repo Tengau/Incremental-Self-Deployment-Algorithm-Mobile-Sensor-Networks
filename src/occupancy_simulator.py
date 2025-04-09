@@ -42,6 +42,14 @@ class OccupancyGridSimulator:
         self.get_laser_readings(starting_pose)
 
     def read_image(self, file_name):
+        """Reads an image and sets white to 0, grey to 0.5, and black to 1.0
+
+        Args:
+            file_name (str): map file name
+
+        Returns:
+            np array: generated map of shape (H, W)
+        """
         image = cv2.imread(file_name, flags=cv2.IMREAD_GRAYSCALE)
 
         # preprocessing
@@ -55,11 +63,23 @@ class OccupancyGridSimulator:
         return map
 
     def plot_test_map(self, map):
+        """plot the gt map for debugging
+
+        Args:
+            map (np array): gt map
+        """
         # have to use gray_reverse for plotting
         plt.imshow(map, cmap="gray_r")
         plt.colorbar()
 
     def plot_points(self, points, color, point_size=5):
+        """plot N points
+
+        Args:
+            points (np array of shape [N, 2]): points to plot
+            color (str): color
+            point_size (int, optional): size of plotted point. Defaults to 5.
+        """
         # points (N, 2)
         # plot points
         logger.debug(f"Points shape: {points.shape}")
@@ -112,7 +132,18 @@ class OccupancyGridSimulator:
         return np.array(points)  # (m, 2) m = hit points
 
     def generate_circle_points(self, center, radius, num_points=360):
+        """generate points in a certain radius around a center point
+
+        Args:
+            center (np arr): (2,) array for center
+            radius (float): range of sensor
+            num_points (int, optional): Number of angles to check. Defaults to 360.
+
+        Returns:
+            np array: numpy array of points in the circle (360, 2)
+        """
         angles = np.linspace(0, 2 * np.pi, num_points, endpoint=False)
+        # print("center", center.shape)
         points = [
             (center[0] + radius * np.cos(a), center[1] + radius * np.sin(a))
             for a in angles
@@ -120,6 +151,11 @@ class OccupancyGridSimulator:
         return np.array(points)  # (360, 2)
 
     def get_laser_readings(self, pose):
+        """get simulated laser readings from new pose of the robot
+
+        Args:
+            pose (np array): simulate a lidar and get readings in 360 degrees
+        """
         # laser_sweep to get occupied
         # get points at a radius of sensor_range from the pose in the map
 
@@ -162,10 +198,18 @@ class OccupancyGridSimulator:
                 logger.debug(f"No obstacles found for {pose[0]}, {pose[1]}")
 
     def update(self, new_pose):
+        """updates the simulation
+
+        Args:
+            new_pose (np array of shape (2,)): new pose
+        """
 
         plt.clf()
         # will need to run paper algorithm before this to find new pose
-        self.current_robot_pos = new_pose.reshape((1, 2))
+        if new_pose.shape != (1, 2):
+            self.current_robot_pos = new_pose.reshape((1, 2))
+        else:
+            self.current_robot_pos = new_pose
         self.robot_pos = np.vstack((self.robot_pos, new_pose))
         # update map
         self.get_laser_readings(new_pose)
@@ -183,6 +227,9 @@ class OccupancyGridSimulator:
         plt.tight_layout()
         plt.pause(interval=1.0)
 
+    def get_curr_map(self):
+        return self.curr_map
+
     def save_img(self, output_name):
         logger.info("Saving the figure to path {}".format(output_name))
         plt.savefig(output_name)  # Save the figure to a file.
@@ -192,6 +239,62 @@ parent_dir = Path(__file__).resolve().parent.parent
 CONFIG_FILENAME = parent_dir / "config" / "config_test.yaml"
 
 
+# algorithm functions
+def find_outline(map):
+    """
+    Find the outline/boundary between free space (white, value 0) and
+    occupied/unknown space (black/gray, values 0.5 or 1.0)
+
+    Returns:
+        np.array: Array of shape (N, 2) containing [x, y] coordinates of boundary pixels
+    """
+    # Create a binary mask where free space is 1 and occupied/unknown is 0
+    binary_map = (map == 0.0).astype(np.uint8)
+
+    # Find contours
+    contours, _ = cv2.findContours(binary_map, cv2.RETR_LIST, cv2.CHAIN_APPROX_NONE)
+
+    # Extract all points from contours
+    outline_points = []
+    for contour in contours:
+        for point in contour:
+            outline_points.append(point[0])  # point is [[[x, y]]], we want [x, y]
+    # print("check")
+    return np.array(outline_points)
+
+
+def find_random_outline_location(curr_map, num_locations=1):
+    """
+    Find random locations on the outline/boundary between free space and occupied/unknown space.
+
+    Args:
+        num_locations (int): Number of random locations to find
+
+    Returns:
+        np.array: Array of shape (num_locations, 2) containing [x, y] coordinates
+    """
+    # Get all outline points
+    outline_points = find_outline(curr_map)
+
+    if outline_points.shape[0] == 0:
+        print("No outline points found in the map")
+        return None
+
+    # Select random indices
+    random_indices = np.random.choice(
+        outline_points.shape[0], size=num_locations, replace=False
+    )
+    random_outline_locations = outline_points[random_indices]
+
+    # Convert from [x, y] to [row, col] format (swap coordinates)
+    # This is because OpenCV uses (x=col, y=row) but our internal format is [row, col]
+    random_outline_locations = np.column_stack(
+        (random_outline_locations[:, 1], random_outline_locations[:, 0])
+    )
+
+    return random_outline_locations
+
+
 def main():
     config_path = Path(CONFIG_FILENAME)
     config = load_config(config_path)
@@ -199,24 +302,36 @@ def main():
     logger.info(f"Parent directory: {parent_dir}")
     logger.info(f"Input map: {config['input']['input_map']}")
     file_name = parent_dir / config["input"]["input_map"]
-
+    t_total = 50
     occ_sim = OccupancyGridSimulator(file_name, starting_pose=np.array([800.0, 700.0]))
+    mode = "boundary_alg"
 
     # replace with heuristic code:
-    poses = [
-        np.array([750.0, 700.0]),
-        np.array([700.0, 700.0]),
-        np.array([650.0, 700.0]),
-        np.array([600.0, 650.0]),
-        np.array([550.0, 660.0]),
-        np.array([500.0, 650.0]),
-    ]
+    # poses = [
+    #     np.array([750.0, 700.0]),
+    #     np.array([700.0, 700.0]),
+    #     np.array([650.0, 700.0]),
+    #     np.array([600.0, 650.0]),
+    #     np.array([550.0, 660.0]),
+    #     np.array([500.0, 650.0]),
+    # ]
+
+    # for pose in poses:
+    #     occ_sim.update(new_pose=pose)
+
+    # output_name = parent_dir / config["plot"]["plot_output_filename"]
 
     # Run the simulation
-    for pose in poses:
-        occ_sim.update(new_pose=pose)
+    if mode == "boundary_alg":
+        for timestep in range(t_total):  # poses:
+            new_map = occ_sim.get_curr_map()
+            new_pose = find_random_outline_location(new_map, 1)
+            # print("np", new_pose.shape)
+            # print(new_pose)
+            occ_sim.update(new_pose=np.array([new_pose[0][1], new_pose[0][0]]))
+            occ_sim.save_img(f"../data/output/{mode}/{mode}_{timestep}.png")
 
-    occ_sim.save_img("simulator_test.png")
+        occ_sim.save_img("simulator_test.png")
 
 
 if __name__ == "__main__":

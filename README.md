@@ -2,7 +2,8 @@
 
 This repository contains an unofficial python paper implementation for "An Incremental Self-Deployment Algorithm for Mobile Sensor Networks" (Howard et. al)
 
-![Output](data/output/boundary_alg.gif)
+<img src="./data/boundary_alg.gif" alt="Demo GIF" width="400"/>
+
 
 The application reads the input occupancy map from the `config.yaml` file, processes the data, and plots a simulated lidar acting with various heuristics.
 

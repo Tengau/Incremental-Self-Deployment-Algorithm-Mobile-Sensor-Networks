@@ -3,7 +3,15 @@ import cv2
 from pathlib import Path
 import logging
 import matplotlib.pyplot as plt
+
 from config_parser import load_config
+
+from find_outline_v3 import (
+    find_random_outline_location,
+    find_random_free_location,
+    find_max_coverage_location,
+    find_max_coverage_max_boundary_location,
+)
 
 # Configure logger
 logger = logging.getLogger(__name__)
@@ -40,6 +48,19 @@ class OccupancyGridSimulator:
         self.curr_circle_points = None
         # start it off -->
         self.get_laser_readings(starting_pose)
+
+        plt.imshow(self.curr_map, cmap="gray_r")
+        plt.imshow(self.gt_map, cmap="gray_r", alpha=0.2)
+        plt.colorbar(shrink=0.7, pad=0.02)
+
+        # self.plot_points(self.robot_pos, "g")
+        self.plot_points(self.current_robot_pos.reshape((1, 2)), "r")
+
+        plt.title("Robot Position Map", fontsize=16, fontweight="bold")
+        plt.xlabel("X Position", fontsize=12)
+        plt.ylabel("Y Position", fontsize=12)
+        plt.tight_layout()
+        plt.pause(interval=1.0)
 
     def read_image(self, file_name):
         """Reads an image and sets white to 0, grey to 0.5, and black to 1.0
@@ -94,7 +115,7 @@ class OccupancyGridSimulator:
         # plt.show()
 
     def bresenham_line(self, x0, y0, x1, y1):
-        """
+        """Code sourced from LidarMapper
         Returns the grid cells between two points in the occupancy grid map using the Bresenham's line algorithm.
 
         :param x0, y0: The coordinates of the first point.
@@ -239,89 +260,6 @@ parent_dir = Path(__file__).resolve().parent.parent
 CONFIG_FILENAME = parent_dir / "config" / "config_test.yaml"
 
 
-# algorithm functions
-def find_outline(map):
-    """
-    Find the outline/boundary between free space (white, value 0) and
-    occupied/unknown space (black/gray, values 0.5 or 1.0)
-
-    Returns:
-        np.array: Array of shape (N, 2) containing [x, y] coordinates of boundary pixels
-    """
-    # Create a binary mask where free space is 1 and occupied/unknown is 0
-    binary_map = (map == 0.0).astype(np.uint8)
-
-    # Find contours
-    contours, _ = cv2.findContours(binary_map, cv2.RETR_LIST, cv2.CHAIN_APPROX_NONE)
-
-    # Extract all points from contours
-    outline_points = []
-    for contour in contours:
-        for point in contour:
-            outline_points.append(point[0])  # point is [[[x, y]]], we want [x, y]
-    # print("check")
-    return np.array(outline_points)
-
-
-def find_random_outline_location(curr_map, num_locations=1):
-    """
-    Find random locations on the outline/boundary between free space and occupied/unknown space.
-
-    Args:
-        num_locations (int): Number of random locations to find
-
-    Returns:
-        np.array: Array of shape (num_locations, 2) containing [x, y] coordinates
-    """
-    # Get all outline points
-    outline_points = find_outline(curr_map)
-
-    if outline_points.shape[0] == 0:
-        print("No outline points found in the map")
-        return None
-
-    # Select random indices
-    random_indices = np.random.choice(
-        outline_points.shape[0], size=num_locations, replace=False
-    )
-    random_outline_locations = outline_points[random_indices]
-
-    # Convert from [x, y] to [row, col] format (swap coordinates)
-    # This is because OpenCV uses (x=col, y=row) but our internal format is [row, col]
-    random_outline_locations = np.column_stack(
-        (random_outline_locations[:, 1], random_outline_locations[:, 0])
-    )
-
-    return random_outline_locations
-
-
-def find_random_free_location(map, num_locations=1):
-    """
-    Find random locations within the free space (white, value 0) of the map.
-
-    Args:
-        num_locations (int): Number of random locations to find
-
-    Returns:
-        np.array: Array of shape (num_locations, 2) containing [x, y] coordinates
-    """
-    # Find all free spaces (where value is 0)
-    free_spaces = np.where(map == 0.0)
-    indices = np.column_stack((free_spaces[0], free_spaces[1]))
-
-    if indices.shape[0] == 0:
-        print("No free spaces found in the map")
-        return None
-
-    # Select random indices
-    random_indices = np.random.choice(
-        indices.shape[0], size=num_locations, replace=False
-    )
-    random_locations = indices[random_indices]
-
-    return random_locations
-
-
 def main():
     config_path = Path(CONFIG_FILENAME)
     config = load_config(config_path)
@@ -329,11 +267,10 @@ def main():
     logger.info(f"Parent directory: {parent_dir}")
     logger.info(f"Input map: {config['input']['input_map']}")
     file_name = parent_dir / config["input"]["input_map"]
-    t_total = 50
-    occ_sim = OccupancyGridSimulator(file_name, starting_pose=np.array([800.0, 700.0]))
-
+    t_total = 10
+    # occ_sim = OccupancyGridSimulator(file_name, starting_pose=np.array([800.0, 700.0]))
+    occ_sim = OccupancyGridSimulator(file_name, starting_pose=np.array([200.0, 500.0]))
     # mode = "boundary_alg"
-    mode = "random"
 
     # replace with heuristic code:
     # poses = [
@@ -351,24 +288,23 @@ def main():
     # output_name = parent_dir / config["plot"]["plot_output_filename"]
 
     # Run the simulation
-    if mode == "boundary_alg":
-        for timestep in range(t_total):  # poses:
-            new_map = occ_sim.get_curr_map()
-            new_pose = find_random_outline_location(new_map, 1)
-            # print("np", new_pose.shape)
-            # print(new_pose)
-            occ_sim.update(new_pose=np.array([new_pose[0][1], new_pose[0][0]]))
-            occ_sim.save_img(f"../data/output/{mode}/{mode}_{timestep}.png")
+    mode = "boundary_coverage_alg"
+    occ_sim.save_img(f"../data/output/{mode}/{mode}_0.png")
 
-        occ_sim.save_img("simulator_test.png")
-    elif mode == "random":
-        for timestep in range(t_total):  # poses:
-            new_map = occ_sim.get_curr_map()
+    for timestep in range(t_total):  # poses:
+        new_map = occ_sim.get_curr_map()
+        if mode == "boundary_alg":
+            new_pose = find_random_outline_location(new_map, 1)
+        elif mode == "random":
             new_pose = find_random_free_location(new_map, 1)
-            # print("np", new_pose.shape)
-            # print(new_pose)
-            occ_sim.update(new_pose=np.array([new_pose[0][1], new_pose[0][0]]))
-            occ_sim.save_img(f"../data/output/{mode}/{mode}_{timestep}.png")
+        elif mode == "coverage_alg":
+            new_pose = find_max_coverage_location(new_map, 50, 1)
+        elif mode == "boundary_coverage_alg":
+            new_pose = find_max_coverage_max_boundary_location(new_map, 50, 1)
+        # print("np", new_pose.shape)
+        # print(new_pose)
+        occ_sim.update(new_pose=np.array([new_pose[0][1], new_pose[0][0]]))
+        occ_sim.save_img(f"../data/output/{mode}/{mode}_{timestep+1}.png")
 
     occ_sim.save_img(f"../data/output/{mode}_final.png")
 

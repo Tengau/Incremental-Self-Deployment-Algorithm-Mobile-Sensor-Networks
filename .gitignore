@@ -161,7 +161,7 @@ cython_debug/
 .vscode/
 
 # data
-data/output/boundary_coverage_alg/*
-data/output/random/*
-data/output/boundary_alg/*
-data/output/coverage_alg/*
+data/output/boundary_coverage_alg/*.png
+data/output/random/*.png
+data/output/boundary_alg/*.png
+data/output/coverage_alg/*.png

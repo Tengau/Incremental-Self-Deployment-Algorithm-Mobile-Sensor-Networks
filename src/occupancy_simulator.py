@@ -1,5 +1,6 @@
 import numpy as np
 import cv2
+import os
 from pathlib import Path
 import logging
 import matplotlib.pyplot as plt
@@ -288,7 +289,9 @@ def main():
     # output_name = parent_dir / config["plot"]["plot_output_filename"]
 
     # Run the simulation
-    mode = "boundary_coverage_alg"
+    mode = "random"
+    if not os.path.exists(f"../data/output/{mode}"):
+        os.makedirs(f"../data/output/{mode}")
     occ_sim.save_img(f"../data/output/{mode}/{mode}_0.png")
 
     for timestep in range(t_total):  # poses:

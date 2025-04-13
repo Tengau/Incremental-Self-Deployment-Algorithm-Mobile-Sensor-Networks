@@ -331,10 +331,14 @@ def main():
     # output_name = parent_dir / config["plot"]["plot_output_filename"]
 
     # Run the simulation
+<<<<<<< HEAD
     mode = "boundary_alg"
     logger.info(f"Running mode={mode}")
     logger.info(f"Saving the figure to path ../data/output/{mode}/")
 
+=======
+    mode = "random"
+>>>>>>> c7d950fb2a17c6bbbcf0e12f7cc2d1869171a18f
     if not os.path.exists(f"../data/output/{mode}"):
         os.makedirs(f"../data/output/{mode}")
     occ_sim.save_img(f"../data/output/{mode}/{mode}_0.png")

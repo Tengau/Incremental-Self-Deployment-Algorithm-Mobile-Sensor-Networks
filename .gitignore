@@ -162,6 +162,10 @@ cython_debug/
 
 # data
 data/output/boundary_coverage_alg/*.png
+<<<<<<< HEAD
 data/output/random_alg/*.png
+=======
+data/output/random/*.png
+>>>>>>> c7d950fb2a17c6bbbcf0e12f7cc2d1869171a18f
 data/output/boundary_alg/*.png
 data/output/coverage_alg/*.png

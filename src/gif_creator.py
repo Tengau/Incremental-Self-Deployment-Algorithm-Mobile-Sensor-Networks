@@ -20,6 +20,7 @@ def update(i):
 
 
 if __name__ == "__main__":
+    # Use: python3 gif_creator.py ../data/output/random_alg/ ../data/random_alg.gi
     parser = argparse.ArgumentParser(description="Create an animation from PNG files.")
     parser.add_argument("input_dir", help="Directory containing PNG files.")
     parser.add_argument("output_gif", help="Path to save the output GIF.")
@@ -29,10 +30,8 @@ if __name__ == "__main__":
         default=500,
         help="Frame interval in ms (default: 500ms)",
     )
-
     args = parser.parse_args()
 
-    # Collect and sort PNG files naturally
     pattern = os.path.join(args.input_dir, "*.png")
     files = sorted(glob.glob(pattern), key=natural_key)
 
@@ -41,13 +40,16 @@ if __name__ == "__main__":
 
     print(f"Found {len(files)} PNG files.")
 
-    # Load images
     image_array = [np.array(Image.open(f)) for f in files]
     print("Loaded image_array with shape:", np.array(image_array).shape)
 
-    # Create plot
+    # Create figure and remove axes
     fig, ax = plt.subplots()
     im = ax.imshow(image_array[0], animated=True)
+
+    ax.axis("off")  # Hide axis
+    plt.tight_layout(pad=0)  # Remove padding
+    fig.patch.set_alpha(0.0)  # Optional: transparent background
 
     animation_fig = animation.FuncAnimation(
         fig,
@@ -58,6 +60,5 @@ if __name__ == "__main__":
         repeat_delay=10,
     )
 
-    # Save animation
-    animation_fig.save(args.output_gif)
+    animation_fig.save(args.output_gif, dpi=100, writer="pillow")
     print(f"Saved animation to {args.output_gif}")

@@ -1,12 +1,15 @@
 import logging
 import numpy as np
 from pathlib import Path
+import os
 
 from config_parser import load_config
 from occupancy_simulator import OccupancyGridSimulator
 from find_outline_v3 import (
     find_random_free_location,
     find_random_outline_location,
+    find_max_coverage_location,
+    find_max_coverage_max_boundary_location,
 )  # , find_outline
 
 
@@ -34,46 +37,33 @@ def main():
     logger.info(f"Parent directory: {parent_dir}")
     logger.info(f"Input map: {config['input']['input_map']}")
     file_name = parent_dir / config["input"]["input_map"]
-    t_total = 50
-    occ_sim = OccupancyGridSimulator(file_name, starting_pose=np.array([800.0, 700.0]))
 
-    # mode = "boundary_alg"
-    mode = "random"
+    t_total = 10
+    occ_sim = OccupancyGridSimulator(file_name, starting_pose=np.array([200.0, 500.0]))
 
-    # replace with heuristic code:
-    # poses = [
-    #     np.array([750.0, 700.0]),
-    #     np.array([700.0, 700.0]),
-    #     np.array([650.0, 700.0]),
-    #     np.array([600.0, 650.0]),
-    #     np.array([550.0, 660.0]),
-    #     np.array([500.0, 650.0]),
-    # ]
+    mode = "random_alg"
+    if not os.path.exists(f"../data/output/{mode}"):
+        os.makedirs(f"../data/output/{mode}")
+    occ_sim.save_img(f"../data/output/{mode}/{mode}_0.png")
 
-    # for pose in poses:
-    #     occ_sim.update(new_pose=pose)
-
-    # output_name = parent_dir / config["plot"]["plot_output_filename"]
-
-    # Run the simulation
-    if mode == "boundary_coverage":
-        for timestep in range(t_total):  # poses:
-            new_map = occ_sim.get_curr_map()
-            new_pose = find_random_outline_location(new_map, 1)
-            # print("np", new_pose.shape)
-            # print(new_pose)
-            occ_sim.update(new_pose=np.array([new_pose[0][1], new_pose[0][0]]))
-            occ_sim.save_img(f"../data/output/{mode}/{mode}_{timestep}.png")
-
-        occ_sim.save_img("simulator_test.png")
-    elif mode == "random":
-        for timestep in range(t_total):  # poses:
-            new_map = occ_sim.get_curr_map()
-            new_pose = find_random_free_location(new_map, 1)
-            # print("np", new_pose.shape)
-            # print(new_pose)
-            occ_sim.update(new_pose=np.array([new_pose[0][1], new_pose[0][0]]))
-            occ_sim.save_img(f"../data/output/{mode}/{mode}_{timestep}.png")
+    for timestep in range(t_total):  # poses:
+        new_map = occ_sim.get_curr_map()
+        if mode == "boundary_alg":
+            new_pose = find_random_outline_location(new_map, occ_sim.robot_pos_mask, 1)
+        elif mode == "random_alg":
+            new_pose = find_random_free_location(new_map, occ_sim.robot_pos_mask, 1)
+        elif mode == "coverage_alg":
+            new_pose = find_max_coverage_location(
+                new_map, occ_sim.robot_pos_mask, 50, 1
+            )
+        elif mode == "boundary_coverage_alg":
+            new_pose = find_max_coverage_max_boundary_location(
+                new_map, occ_sim.robot_pos_mask, 50, 1
+            )
+        # print("np", new_pose.shape)
+        # print(new_pose)
+        occ_sim.update(new_pose=np.array([new_pose[0][1], new_pose[0][0]]))
+        occ_sim.save_img(f"../data/output/{mode}/{mode}_{timestep+1}.png")
 
     occ_sim.save_img(f"../data/output/{mode}_final.png")
 

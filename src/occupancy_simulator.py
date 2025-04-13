@@ -1,5 +1,6 @@
 import numpy as np
 import cv2
+import os
 from pathlib import Path
 import logging
 import matplotlib.pyplot as plt
@@ -39,14 +40,26 @@ class OccupancyGridSimulator:
         # map_vis = self.gt_map # debug
         self.robot_pos = starting_pose  # collection of all robots
         self.current_robot_pos = starting_pose
+        self.robot_pos_mask = np.full(self.gt_map.shape, True, dtype=bool)
         self.curr_map = 0.5 * np.ones_like(self.gt_map)
         self.px_per_meter = 10.0  # add to config later
-        self.sensor_range = 5.0
+        self.sensor_range = 5
         self.map_h, self.map_w = self.gt_map.shape
         self.min_x, self.min_y = 0, 0
+        self.robot_radius = 6
 
         self.curr_circle_points = None
         # start it off -->
+        self.update_robot_mask(starting_pose[0], starting_pose[1])
+
+        # ensures robots are not too close to obstacle points
+        self.update_config_space()
+
+        plt.figure(figsize=(8, 4))
+        height, width = self.gt_map.shape
+        plt.xlim(0, width)
+        plt.ylim(height, 0)
+
         self.get_laser_readings(starting_pose)
 
         plt.imshow(self.curr_map, cmap="gray_r")
@@ -54,12 +67,14 @@ class OccupancyGridSimulator:
         plt.colorbar(shrink=0.7, pad=0.02)
 
         # self.plot_points(self.robot_pos, "g")
-        self.plot_points(self.current_robot_pos.reshape((1, 2)), "r")
+        self.plot_points(self.current_robot_pos.reshape((1, 2)), "Current Robot", "r")
 
         plt.title("Robot Position Map", fontsize=16, fontweight="bold")
         plt.xlabel("X Position", fontsize=12)
         plt.ylabel("Y Position", fontsize=12)
         plt.tight_layout()
+
+        plt.legend(loc="upper right")
         plt.pause(interval=1.0)
 
     def read_image(self, file_name):
@@ -93,11 +108,11 @@ class OccupancyGridSimulator:
         plt.imshow(map, cmap="gray_r")
         plt.colorbar()
 
-    def plot_points(self, points, color, point_size=5):
+    def plot_points(self, points, label, color, point_size=5):
         """plot N points
 
         Args:
-            points (np array of shape [N, 2]): points to plot
+            points (np array of shape [N, 2]): points to plot (x, y)
             color (str): color
             point_size (int, optional): size of plotted point. Defaults to 5.
         """
@@ -110,7 +125,7 @@ class OccupancyGridSimulator:
             y=points[:, 1],
             s=point_size,
             c=color,
-            label="Robots",
+            label=label,
         )
         # plt.show()
 
@@ -161,7 +176,7 @@ class OccupancyGridSimulator:
             num_points (int, optional): Number of angles to check. Defaults to 360.
 
         Returns:
-            np array: numpy array of points in the circle (360, 2)
+            np array: numpy array of points in the circle (360, 2) (x, y)
         """
         angles = np.linspace(0, 2 * np.pi, num_points, endpoint=False)
         # print("center", center.shape)
@@ -175,7 +190,7 @@ class OccupancyGridSimulator:
         """get simulated laser readings from new pose of the robot
 
         Args:
-            pose (np array): simulate a lidar and get readings in 360 degrees
+            pose (np array): simulate a lidar and get readings in 360 degrees (x, y)
         """
         # laser_sweep to get occupied
         # get points at a radius of sensor_range from the pose in the map
@@ -183,18 +198,18 @@ class OccupancyGridSimulator:
         circle_points = self.generate_circle_points(
             pose, self.sensor_range * self.px_per_meter, num_points=180
         )
-        self.plot_points(circle_points, "b", 0.1)
+        self.plot_points(circle_points, "Edge of 2D Lidar", "b", 0.1)
         # run bresenham_line on the 360 points from the pose or make a
         # diff algorithm that stops when it hits an obstacle
         obstacle_point = []
         for point in circle_points:
             logger.debug(
-                f"Run algorithm on: {pose[0]}, {pose[1]}, {np.floor(point[0])}, {np.floor(point[1])}"
+                f"Run algorithm on (x, y): {pose[0]}, {pose[1]}, {np.floor(point[0])}, {np.floor(point[1])}"
             )
 
             points_in_between = self.bresenham_line(
                 pose[0], pose[1], np.floor(point[0]), np.floor(point[1])
-            )  # double check resolution
+            )
             logger.debug(f"Length of points in between: {len(points_in_between)}")
 
             # filter for obstacle hits (there should only be a few)
@@ -218,11 +233,35 @@ class OccupancyGridSimulator:
             if not obstacle_point:
                 logger.debug(f"No obstacles found for {pose[0]}, {pose[1]}")
 
+    def update_robot_mask(self, x, y):
+        y, x = int(y), int(x)
+        self.robot_pos_mask[
+            y - self.robot_radius * 2 : y + self.robot_radius * 2 + 1,
+            x - self.robot_radius * 2 : x + self.robot_radius * 2 + 1,
+        ] = False
+
+    def update_config_space(self):
+        obstacles = np.argwhere(self.gt_map == 1.0)  # (y, x)
+        # plot config space
+        # plt.figure()
+        # self.plot_points(obstacles, "r")
+        # plt.title("Configuration Space", fontsize=16, fontweight="bold")
+        # plt.xlabel("X Position", fontsize=12)
+        # plt.ylabel("Y Position", fontsize=12)
+        # plt.tight_layout()
+        # plt.show()
+        for y, x in obstacles:
+            y, x = int(y), int(x)
+            self.robot_pos_mask[
+                y - self.robot_radius : y + self.robot_radius + 1,
+                x - self.robot_radius : x + self.robot_radius + 1,
+            ] = False
+
     def update(self, new_pose):
         """updates the simulation
 
         Args:
-            new_pose (np array of shape (2,)): new pose
+            new_pose (np array of shape (2,)): new pose (x, y)
         """
 
         plt.clf()
@@ -231,7 +270,9 @@ class OccupancyGridSimulator:
             self.current_robot_pos = new_pose.reshape((1, 2))
         else:
             self.current_robot_pos = new_pose
+        self.update_robot_mask(new_pose[0], new_pose[1])
         self.robot_pos = np.vstack((self.robot_pos, new_pose))
+
         # update map
         self.get_laser_readings(new_pose)
 
@@ -239,25 +280,27 @@ class OccupancyGridSimulator:
         plt.imshow(self.gt_map, cmap="gray_r", alpha=0.2)
         plt.colorbar(shrink=0.7, pad=0.02)
 
-        self.plot_points(self.robot_pos, "g")
-        self.plot_points(self.current_robot_pos, "r")
+        self.plot_points(self.robot_pos, "Previous Robot", "g")
+        self.plot_points(self.current_robot_pos, "Current Robot", "r")
 
         plt.title("Robot Position Map", fontsize=16, fontweight="bold")
         plt.xlabel("X Position", fontsize=12)
         plt.ylabel("Y Position", fontsize=12)
         plt.tight_layout()
+        plt.legend(loc="upper right")
         plt.pause(interval=1.0)
 
     def get_curr_map(self):
         return self.curr_map
 
     def save_img(self, output_name):
-        logger.info("Saving the figure to path {}".format(output_name))
         plt.savefig(output_name)  # Save the figure to a file.
 
 
 parent_dir = Path(__file__).resolve().parent.parent
 CONFIG_FILENAME = parent_dir / "config" / "config_test.yaml"
+
+from tqdm import tqdm
 
 
 def main():
@@ -267,7 +310,7 @@ def main():
     logger.info(f"Parent directory: {parent_dir}")
     logger.info(f"Input map: {config['input']['input_map']}")
     file_name = parent_dir / config["input"]["input_map"]
-    t_total = 10
+    t_total = 100
     # occ_sim = OccupancyGridSimulator(file_name, starting_pose=np.array([800.0, 700.0]))
     occ_sim = OccupancyGridSimulator(file_name, starting_pose=np.array([200.0, 500.0]))
     # mode = "boundary_alg"
@@ -288,21 +331,29 @@ def main():
     # output_name = parent_dir / config["plot"]["plot_output_filename"]
 
     # Run the simulation
-    mode = "boundary_coverage_alg"
+    mode = "boundary_alg"
+    logger.info(f"Running mode={mode}")
+    logger.info(f"Saving the figure to path ../data/output/{mode}/")
+
+    if not os.path.exists(f"../data/output/{mode}"):
+        os.makedirs(f"../data/output/{mode}")
     occ_sim.save_img(f"../data/output/{mode}/{mode}_0.png")
 
-    for timestep in range(t_total):  # poses:
+    # for timestep in range(t_total):  # poses:
+    for timestep in tqdm(range(t_total), desc="Simulating", unit="step"):
         new_map = occ_sim.get_curr_map()
         if mode == "boundary_alg":
-            new_pose = find_random_outline_location(new_map, 1)
-        elif mode == "random":
-            new_pose = find_random_free_location(new_map, 1)
+            new_pose = find_random_outline_location(new_map, occ_sim.robot_pos_mask, 1)
+        elif mode == "random_alg":
+            new_pose = find_random_free_location(new_map, occ_sim.robot_pos_mask, 1)
         elif mode == "coverage_alg":
-            new_pose = find_max_coverage_location(new_map, 50, 1)
+            new_pose = find_max_coverage_location(
+                new_map, occ_sim.robot_pos_mask, 50, 1
+            )
         elif mode == "boundary_coverage_alg":
-            new_pose = find_max_coverage_max_boundary_location(new_map, 50, 1)
-        # print("np", new_pose.shape)
-        # print(new_pose)
+            new_pose = find_max_coverage_max_boundary_location(
+                new_map, occ_sim.robot_pos_mask, 50, 1
+            )
         occ_sim.update(new_pose=np.array([new_pose[0][1], new_pose[0][0]]))
         occ_sim.save_img(f"../data/output/{mode}/{mode}_{timestep+1}.png")
 

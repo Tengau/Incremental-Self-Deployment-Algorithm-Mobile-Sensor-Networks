@@ -9,7 +9,7 @@ import matplotlib.pyplot as plt
 
 
 # algorithm functions
-def find_outline(map):
+def find_outline(map, pose_mask):
     """
     Find the outline/boundary between free space (white, value 0) and
     occupied/unknown space (black/gray, values 0.5 or 1.0)
@@ -18,6 +18,7 @@ def find_outline(map):
         np.array: Array of shape (N, 2) containing [x, y] coordinates of boundary pixels
     """
     # Create a binary mask where free space is 1 and occupied/unknown is 0
+    map = np.where(pose_mask, map, -1)
     binary_map = (map == 0.0).astype(np.uint8)
 
     # Find contours
@@ -32,7 +33,7 @@ def find_outline(map):
     return np.array(outline_points)
 
 
-def find_random_outline_location(curr_map, num_locations=1):
+def find_random_outline_location(curr_map, pose_mask, num_locations=1):
     """
     Find random locations on the outline/boundary between free space and occupied/unknown space.
 
@@ -43,7 +44,7 @@ def find_random_outline_location(curr_map, num_locations=1):
         np.array: Array of shape (num_locations, 2) containing [x, y] coordinates
     """
     # Get all outline points
-    outline_points = find_outline(curr_map)
+    outline_points = find_outline(curr_map, pose_mask)
 
     if outline_points.shape[0] == 0:
         print("No outline points found in the map")
@@ -64,7 +65,7 @@ def find_random_outline_location(curr_map, num_locations=1):
     return random_outline_locations
 
 
-def find_random_free_location(map, num_locations=1):
+def find_random_free_location(map, pose_mask, num_locations=1):
     """
     Find random locations within the free space (white, value 0) of the map.
 
@@ -75,7 +76,9 @@ def find_random_free_location(map, num_locations=1):
         np.array: Array of shape (num_locations, 2) containing [x, y] coordinates
     """
     # Find all free spaces (where value is 0)
+    map = np.where(pose_mask, map, -1)
     free_spaces = np.where(map == 0.0)
+
     indices = np.column_stack((free_spaces[0], free_spaces[1]))
 
     if indices.shape[0] == 0:
@@ -109,7 +112,7 @@ def mask_circle(map, cx, cy, r):
     return num_occ
 
 
-def find_max_coverage_location(map, sensor_range=50, num_locations=1):
+def find_max_coverage_location(map, pose_mask, sensor_range=50, num_locations=1):
     """
     Find locations within the free space (white, value 0) of the map that maximizes coverage of unknown area.
 
@@ -118,6 +121,7 @@ def find_max_coverage_location(map, sensor_range=50, num_locations=1):
         num_locations (int, optional): _description_. Defaults to 1.
     """
     # Find all free spaces (where value is 0)
+    map = np.where(pose_mask, map, -1)
     free_spaces = np.where(map == 0.0)
     indices = np.column_stack((free_spaces[0], free_spaces[1]))
 
@@ -165,7 +169,9 @@ def debug_plot_points(points, color, point_size=5):
     plt.show()
 
 
-def find_max_coverage_max_boundary_location(map, sensor_range=50, num_locations=1):
+def find_max_coverage_max_boundary_location(
+    map, pose_mask, sensor_range=50, num_locations=1
+):
     """
     Find locations within the free space (white, value 0) of the map that maximizes coverage of unknown area and is on the boundary.
 
@@ -176,10 +182,11 @@ def find_max_coverage_max_boundary_location(map, sensor_range=50, num_locations=
     # Find all free spaces at the boundary(where value is 0)
     # boundary is a (N,2) array of points at the boundary
 
-    boundary_coords = find_outline(map)
+    boundary_coords = find_outline(map, pose_mask)
     print(boundary_coords.shape)
+    # Convert from [x, y] to [row, col] format (swap coordinates)
     boundary_coords = np.column_stack((boundary_coords[:, 1], boundary_coords[:, 0]))
-    debug_plot_points(boundary_coords, "m", point_size=5)
+    # debug_plot_points(boundary_coords, "m", point_size=5)
 
     valid_boundary_points = []
     for y, x in boundary_coords:

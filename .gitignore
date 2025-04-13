@@ -164,4 +164,4 @@ cython_debug/
 data/output/boundary_coverage_alg/*
 data/output/random/*
 data/output/boundary_alg/*
-data/output/coverage_Alg/*
+data/output/coverage_alg/*

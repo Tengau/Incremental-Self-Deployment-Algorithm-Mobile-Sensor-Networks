@@ -20,7 +20,7 @@ def update(i):
 
 
 if __name__ == "__main__":
-    # Use: python3 gif_creator.py ../data/output/random_alg/ ../data/random_alg.gi
+    # Use: python3 gif_creator.py ../data/output/random_alg/ ../data/random_alg.gif
     parser = argparse.ArgumentParser(description="Create an animation from PNG files.")
     parser.add_argument("input_dir", help="Directory containing PNG files.")
     parser.add_argument("output_gif", help="Path to save the output GIF.")
@@ -35,6 +35,9 @@ if __name__ == "__main__":
     pattern = os.path.join(args.input_dir, "*.png")
     files = sorted(glob.glob(pattern), key=natural_key)
 
+    # for file in files:
+    #     print(file)
+    # exit()
     if not files:
         raise FileNotFoundError(f"No PNG files found in directory: {args.input_dir}")
 

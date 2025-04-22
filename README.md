@@ -21,13 +21,14 @@ The application reads the input occupancy map from the `config.yaml` file, proce
 │   └── output                   # Output data/files generated
 │       ├── occupancy_plot.pdf   # Generated occupancy plot
 │       └── output.gif           # Generated Gif
-├── docs                         # Documentation files
 ├── setup.py                     # Build script for setuptools. Helps in packaging and distribution.
 └── src                          # Source code directory
     ├── __init__.py              # Makes the directory a package
+    ├── config_parser.py         # Parses config file
+    ├── gif_creator.py           # Given a folder of pngs, it creates a gif
     ├── main.py                  # Main application source file
     ├── occupancy_simulator.py   # Source file for occupancy grid functionalities
-    └── selection.py       # Handles plot operations
+    └── selection.py             # Contains heuristics for selecting next pose
 
 ```
 
@@ -49,7 +50,12 @@ pip install .
 4. To run the main script:
 ```bash
 cd src
-python3 occupancy_simulator.py
+python3 main.py
+```
+5. To create a gif:
+```bash
+cd src
+python3 gif_creator.py ../data/output/random_alg/ ../data/random_alg.gif
 ```
 
 This will process the input ground truth occupancy grid specified in the config.yaml file and generate the occupancy grid map plot in data/output.

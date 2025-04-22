@@ -6,10 +6,31 @@ import matplotlib.pyplot as plt
 # from pathlib import Path
 # from config_parser import load_config
 # import matplotlib.pyplot as plt
+from scipy.spatial import ConvexHull, convex_hull_plot_2d
+
+
+def read_image(file_name):
+    """Reads an image and sets white to 0, grey to 0.5, and black to 1.0
+
+    Args:
+        file_name (str): map file name
+
+    Returns:
+        np array: generated map of shape (H, W)
+    """
+    image = cv2.imread(file_name, flags=cv2.IMREAD_GRAYSCALE)
+
+    # preprocessing
+    # 1.0 occupied, 0 free
+    map = np.zeros_like(image)
+    map = np.where(image != 127, map, 0.5)
+    map = np.where(image != 0, map, 1.0)
+
+    return map
 
 
 # algorithm functions
-def find_outline(map, pose_mask):
+def find_outline(circle_arr):
     """
     Find the outline/boundary between free space (white, value 0) and
     occupied/unknown space (black/gray, values 0.5 or 1.0)
@@ -17,23 +38,34 @@ def find_outline(map, pose_mask):
     Returns:
         np.array: Array of shape (N, 2) containing [x, y] coordinates of boundary pixels
     """
-    # Create a binary mask where free space is 1 and occupied/unknown is 0
-    map = np.where(pose_mask, map, -1)
-    binary_map = (map == 0.0).astype(np.uint8)
+    # curr_map = read_image("../data/input/isaac_sample_ros_nav_hospital_map.png")
+    # print(circle_arr.shape)
 
-    # Find contours
-    contours, _ = cv2.findContours(binary_map, cv2.RETR_LIST, cv2.CHAIN_APPROX_NONE)
-
-    # Extract all points from contours
+    hull = ConvexHull(circle_arr)
+    # plt.figure()
+    # plt.imshow(curr_map, cmap="gray_r")
     outline_points = []
-    for contour in contours:
-        for point in contour:
-            outline_points.append(point[0])  # point is [[[x, y]]], we want [x, y]
-    # print("check")
+    for simplex in hull.simplices:
+        # print(circle_arr[simplex, 0].shape)
+        outline_points.append([circle_arr[simplex], circle_arr[simplex]])
+        # plt.plot(circle_arr[simplex, 0], circle_arr[simplex, 1], "k-")
+
+    # plt.title("Boundary")
+    # plt.show()
+    # outline_points = circle_arr[hull.simplices].reshape(-1, 2)
+    # plt.figure()
+
+    # plt.plot(outline_points[0, :], outline_points[1, :], "b.-")  # Blue dots + lines
+    # plt.imshow(curr_map, cmap="gray_r")
+    # plt.show()
+
+    # print("outline points", outline_points.shape)
+    # print("type points", type(outline_points))
+    # print(np.array(outline_points).shape)
     return np.array(outline_points)
 
 
-def find_random_outline_location(curr_map, pose_mask, num_locations=1):
+def find_random_outline_location(curr_map, pose_mask, circle_arr, num_locations=1):
     """
     Find random locations on the outline/boundary between free space and occupied/unknown space.
 
@@ -43,8 +75,26 @@ def find_random_outline_location(curr_map, pose_mask, num_locations=1):
     Returns:
         np.array: Array of shape (num_locations, 2) containing [x, y] coordinates
     """
-    # Get all outline points
-    outline_points = find_outline(curr_map, pose_mask)
+    outline_points = find_outline(circle_arr)
+    outline_points = np.round(outline_points).astype(int)
+
+    # Filter out any points that are out of bounds
+    h, w = curr_map.shape
+    valid_mask = (
+        (outline_points[:, 0] >= 0)
+        & (outline_points[:, 0] < w)
+        & (outline_points[:, 1] >= 0)
+        & (outline_points[:, 1] < h)
+    )
+
+    valid_points = outline_points[valid_mask]
+
+    # Check if each valid point is in free space
+    is_free = np.isclose(
+        curr_map[valid_points[:, 1], valid_points[:, 0]], 0.0, atol=1e-6
+    )
+
+    outline_points = valid_points[is_free]
 
     if outline_points.shape[0] == 0:
         print("No outline points found in the map")
@@ -62,7 +112,7 @@ def find_random_outline_location(curr_map, pose_mask, num_locations=1):
         (random_outline_locations[:, 1], random_outline_locations[:, 0])
     )
 
-    return random_outline_locations
+    return random_outline_locations, outline_points
 
 
 def find_random_free_location(map, pose_mask, num_locations=1):
@@ -100,12 +150,9 @@ def mask_circle(map, cx, cy, r):
 
     # circle mask around the point given
     mask = (x[np.newaxis, :] - cx) ** 2 + (y[:, np.newaxis] - cy) ** 2 < r**2
+
     # check original mask and map out unknown space
-
     masked_circle = map[mask]
-
-    # unknown = masked_circle[masked_circle == 0.5]
-    # num_occ = np.sum(2 * unknown)
 
     num_occ = np.count_nonzero(masked_circle == 0.5)
 
@@ -170,7 +217,7 @@ def debug_plot_points(points, color, point_size=5):
 
 
 def find_max_coverage_max_boundary_location(
-    map, pose_mask, sensor_range=50, num_locations=1
+    map, pose_mask, circle_points, sensor_range=50, num_locations=1
 ):
     """
     Find locations within the free space (white, value 0) of the map that maximizes coverage of unknown area and is on the boundary.
@@ -181,33 +228,28 @@ def find_max_coverage_max_boundary_location(
     """
     # Find all free spaces at the boundary(where value is 0)
     # boundary is a (N,2) array of points at the boundary
+    boundary_coords = find_outline(circle_points)
+    boundary_coords = np.round(boundary_coords).astype(int)
 
-    boundary_coords = find_outline(map, pose_mask)
-    print(boundary_coords.shape)
-    # Convert from [x, y] to [row, col] format (swap coordinates)
-    boundary_coords = np.column_stack((boundary_coords[:, 1], boundary_coords[:, 0]))
-    # debug_plot_points(boundary_coords, "m", point_size=5)
+    # Filter out any points that are out of bounds
+    h, w = map.shape
+    valid_mask = (
+        (boundary_coords[:, 0] >= 0)
+        & (boundary_coords[:, 0] < w)
+        & (boundary_coords[:, 1] >= 0)
+        & (boundary_coords[:, 1] < h)
+    )
 
-    valid_boundary_points = []
-    for y, x in boundary_coords:
-        if 0 <= y < map.shape[0] and 0 <= x < map.shape[1] and map[y, x] == 0.0:
-            valid_boundary_points.append((y, x))
+    valid_points = boundary_coords[valid_mask]
 
-    if not valid_boundary_points:
-        print("No valid boundary free-space points found.")
-        return None
+    # Check if each valid point is in free space
+    is_free = np.isclose(map[valid_points[:, 1], valid_points[:, 0]], 0.0, atol=1e-6)
+
+    valid_boundary_points = valid_points[is_free]
 
     # Convert to array
     valid_boundary_points = np.array(valid_boundary_points)
-    # indices = np.column_stack((valid_boundary_points[0], valid_boundary_points[1]))
 
-    # if indices.shape[0] == 0:
-    #     print("No free spaces found in the map")
-    #     return None
-
-    # coverage area = area of circle w/ sensor range
-    # total_area = np.pi * (sensor_range**2)
-    # print("total_area:", total_area)
     max_coverage = 0.0
     max_coverage_location = np.array([0.0, 0.0])
     for free_space in valid_boundary_points:
@@ -222,47 +264,3 @@ def find_max_coverage_max_boundary_location(
 
         # subtract from total area
     return np.expand_dims(max_coverage_location, axis=0)
-
-
-'''
-def find_max_coverage_location(map, sensor_range=50, num_locations=1):
-    """
-    Find location(s) within free space (value 0) that maximize coverage of unknown area (value 0.5).
-    """
-    # Step 1: Create circular kernel
-    diameter = 2 * sensor_range + 1
-    y, x = np.ogrid[-sensor_range : sensor_range + 1, -sensor_range : sensor_range + 1]
-    circle_mask = (x**2 + y**2) <= sensor_range**2
-    kernel = circle_mask.astype(float)
-
-    # Step 2: Extract unknowns from map
-    unknown_map = (map == 0.5).astype(float)
-
-    # Step 3: Pad unknown_map so convolution stays inside bounds
-    padded = np.pad(unknown_map, sensor_range, mode="constant", constant_values=0)
-
-    # Step 4: Perform convolution manually using sliding window
-    h, w = map.shape
-    coverage_map = np.zeros((h, w))
-
-    for i in range(h):
-        for j in range(w):
-            window = padded[i : i + diameter, j : j + diameter]
-            if window.shape == kernel.shape:  # Just in case edges are off
-                coverage_map[i, j] = np.sum(window * kernel)
-
-    # Step 5: Mask out non-free spaces
-    coverage_map[map != 0.0] = 0
-
-    # Step 6: Get top-N best locations
-    flat_indices = np.argpartition(coverage_map.ravel(), -num_locations)[
-        -num_locations:
-    ]
-    top_coords = np.column_stack(np.unravel_index(flat_indices, coverage_map.shape))
-
-    # Sort by coverage
-    sorted_indices = np.argsort(-coverage_map[top_coords[:, 0], top_coords[:, 1]])
-    top_coords = top_coords[sorted_indices]
-
-    return top_coords[:num_locations]
-'''

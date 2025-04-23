@@ -28,13 +28,13 @@ ch.setFormatter(formatter)
 # Add ch to logger
 logger.addHandler(ch)
 
-vis = False  # debug
+vis = True  # debug
 
 
 class OccupancyGridSimulator:
     """Represents an occupancy grid simulator for robotic mapping."""
 
-    def __init__(self, image_file, starting_pose):
+    def __init__(self, image_file, starting_pose, sensor_range):
         # global map_vis  # debug
         self.isFirst = True
 
@@ -45,7 +45,7 @@ class OccupancyGridSimulator:
         self.robot_pos_mask = np.full(self.gt_map.shape, True, dtype=bool)
         self.curr_map = 0.5 * np.ones_like(self.gt_map)
         self.px_per_meter = 10.0  # add to config later
-        self.sensor_range = 5
+        self.sensor_range = sensor_range
         self.map_h, self.map_w = self.gt_map.shape
         self.min_x, self.min_y = 0, 0
         self.robot_radius = 3
@@ -80,7 +80,7 @@ class OccupancyGridSimulator:
             plt.tight_layout()
 
             plt.legend(loc="upper right")
-            plt.pause(interval=1.0)
+            plt.pause(interval=0.1)
 
     def read_image(self, file_name):
         """Reads an image and sets white to 0, grey to 0.5, and black to 1.0
@@ -207,7 +207,7 @@ class OccupancyGridSimulator:
         # get points at a radius of sensor_range from the pose in the map
 
         circle_points = self.generate_circle_points(
-            pose, self.sensor_range * self.px_per_meter, num_points=180
+            pose, self.sensor_range * self.px_per_meter, num_points=270
         )
         # run bresenham_line on the 360 points from the pose or make a
         # diff algorithm that stops when it hits an obstacle
@@ -303,7 +303,7 @@ class OccupancyGridSimulator:
             plt.ylabel("Y Position", fontsize=12)
             plt.tight_layout()
             plt.legend(loc="upper right")
-            plt.pause(interval=1.0)  # comment for speedup
+            plt.pause(interval=0.1)  # comment for speedup
 
     def get_curr_map(self):
         return self.curr_map
@@ -337,8 +337,12 @@ def main():
     logger.info(f"Input map: {config['input']['input_map']}")
     file_name = parent_dir / config["input"]["input_map"]
     t_total = 100
+    sensor_range = 10
+
     # occ_sim = OccupancyGridSimulator(file_name, starting_pose=np.array([800.0, 700.0]))
-    occ_sim = OccupancyGridSimulator(file_name, starting_pose=np.array([200.0, 500.0]))
+    occ_sim = OccupancyGridSimulator(
+        file_name, starting_pose=np.array([200.0, 500.0]), sensor_range=sensor_range
+    )
     # mode = "boundary_alg"
 
     # replace with heuristic code:
@@ -364,7 +368,6 @@ def main():
     if not os.path.exists(f"../data/output/{mode}"):
         os.makedirs(f"../data/output/{mode}")
     occ_sim.save_img(f"../data/output/{mode}/{mode}_0.png")
-
     for timestep in tqdm(range(t_total), desc="Simulating", unit="step"):
         # start = time.time()
         # coverages[idx][timestep] = occ_sim.get_coverage()
@@ -382,11 +385,11 @@ def main():
             new_pose = find_random_free_location(new_map, occ_sim.robot_pos_mask, 1)
         elif mode == "coverage_alg":
             new_pose = find_max_coverage_location(
-                new_map, occ_sim.robot_pos_mask, 50, 1
+                new_map, occ_sim.robot_pos_mask, sensor_range * 10, 1
             )
         elif mode == "boundary_coverage_alg":
             new_pose = find_max_coverage_max_boundary_location(
-                new_map, occ_sim.robot_pos_mask, 50, 1
+                new_map, occ_sim.robot_pos_mask, sensor_range * 10, 1
             )
 
         occ_sim.update(new_pose=np.array([int(new_pose[0][1]), int(new_pose[0][0])]))

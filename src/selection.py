@@ -8,6 +8,10 @@ import matplotlib.pyplot as plt
 # import matplotlib.pyplot as plt
 from scipy.spatial import ConvexHull, convex_hull_plot_2d
 
+curr_map = cv2.imread(
+    "../data/input/isaac_sample_ros_nav_hospital_map.png", flags=cv2.IMREAD_GRAYSCALE
+)
+
 
 def read_image(file_name):
     """Reads an image and sets white to 0, grey to 0.5, and black to 1.0
@@ -43,12 +47,30 @@ def find_outline(circle_arr):
 
     hull = ConvexHull(circle_arr)
     # plt.figure()
-    # plt.imshow(curr_map, cmap="gray_r")
-    outline_points = []
+    # plt.imshow(curr_map, cmap="gray")
+    sampled_points = []
+
     for simplex in hull.simplices:
-        # print(circle_arr[simplex, 0].shape)
-        outline_points.append([circle_arr[simplex], circle_arr[simplex]])
-        # plt.plot(circle_arr[simplex, 0], circle_arr[simplex, 1], "k-")
+        p1 = circle_arr[simplex[0]]
+        p2 = circle_arr[simplex[1]]
+
+        # Plot the convex hull edge
+        # plt.plot([p1[0], p2[0]], [p1[1], p2[1]], "m-")
+
+        # Sample points along the line between p1 and p2
+        num_samples = 50  # Adjust this number as needed
+        for t in np.linspace(0, 1, num_samples, endpoint=False):
+            sample_point = (1 - t) * p1 + t * p2
+            sampled_points.append(sample_point)
+
+    # Convert to numpy array if needed
+    sampled_points = np.array(sampled_points)
+
+    #  plot sampled points
+    # plt.plot(sampled_points[:, 0], sampled_points[:, 1], "co", markersize=2)
+
+    # plt.show()
+    # print(len(hull.simplices))
 
     # plt.title("Boundary")
     # plt.show()
@@ -56,13 +78,11 @@ def find_outline(circle_arr):
     # plt.figure()
 
     # plt.plot(outline_points[0, :], outline_points[1, :], "b.-")  # Blue dots + lines
-    # plt.imshow(curr_map, cmap="gray_r")
-    # plt.show()
 
     # print("outline points", outline_points.shape)
     # print("type points", type(outline_points))
     # print(np.array(outline_points).shape)
-    return np.array(outline_points)
+    return sampled_points
 
 
 def find_random_outline_location(curr_map, pose_mask, circle_arr, num_locations=1):
@@ -98,7 +118,8 @@ def find_random_outline_location(curr_map, pose_mask, circle_arr, num_locations=
 
     if outline_points.shape[0] == 0:
         print("No outline points found in the map")
-        return None
+        new_pose = find_random_free_location(curr_map, pose_mask, 1)
+        return new_pose, None
 
     # Select random indices
     random_indices = np.random.choice(
@@ -159,7 +180,7 @@ def mask_circle(map, cx, cy, r):
     return num_occ
 
 
-def find_max_coverage_location(map, pose_mask, sensor_range=50, num_locations=1):
+def find_max_coverage_location(map, pose_mask, sensor_range=100, num_locations=1):
     """
     Find locations within the free space (white, value 0) of the map that maximizes coverage of unknown area.
 
@@ -176,9 +197,6 @@ def find_max_coverage_location(map, pose_mask, sensor_range=50, num_locations=1)
         print("No free spaces found in the map")
         return None
 
-    # coverage area = area of circle w/ sensor range
-    # total_area = np.pi * (sensor_range**2)
-    # print("total_area:", total_area)
     max_coverage = 0.0
     max_coverage_location = np.array([0.0, 0.0])
     for free_space in indices:
@@ -217,7 +235,7 @@ def debug_plot_points(points, color, point_size=5):
 
 
 def find_max_coverage_max_boundary_location(
-    map, pose_mask, circle_points, sensor_range=50, num_locations=1
+    map, pose_mask, circle_points, sensor_range=100, num_locations=1
 ):
     """
     Find locations within the free space (white, value 0) of the map that maximizes coverage of unknown area and is on the boundary.
@@ -258,9 +276,8 @@ def find_max_coverage_max_boundary_location(
         if num_occ > max_coverage:
             max_coverage = num_occ
             max_coverage_location[1], max_coverage_location[0] = (
-                free_space[1],
                 free_space[0],
+                free_space[1],
             )
 
-        # subtract from total area
     return np.expand_dims(max_coverage_location, axis=0)

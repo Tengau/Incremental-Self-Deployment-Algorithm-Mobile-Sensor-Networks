@@ -43,10 +43,10 @@ def plot_coverage_v_time(coverages, t_total):
     """
     plt.figure()
     x = range(t_total)
-    plt.plot(x, coverages[0, :], label="P1", marker="o")
-    plt.plot(x, coverages[1, :], label="P2", marker="s")
-    plt.plot(x, coverages[2, :], label="P3", marker="^")
-    plt.plot(x, coverages[3, :], label="P4", marker="D")
+    plt.plot(x, coverages[0, :] / 100.0, label="P1", marker="o")
+    plt.plot(x, coverages[1, :] / 100.0, label="P2", marker="s")
+    plt.plot(x, coverages[2, :] / 100.0, label="P3", marker="^")
+    plt.plot(x, coverages[3, :] / 100.0, label="P4", marker="D")
     plt.xlabel("Deployed Nodes")
     plt.ylabel("Coverage (m^2)")
     plt.title("Plot of Coverage vs Deployed Node")
@@ -89,8 +89,8 @@ def main():
     file_name = parent_dir / config["input"]["input_map"]
     t_total = 30
     # occ_sim = OccupancyGridSimulator(file_name, starting_pose=np.array([800.0, 700.0]))
-    algorithms = ["random_alg", "boundary_alg", "coverage_alg", "boundary_coverage_alg"]
-    # algorithms = ["boundary_alg"]
+    # algorithms = ["random_alg", "boundary_alg", "coverage_alg", "boundary_coverage_alg"]
+    algorithms = ["boundary_alg"]
 
     # mode = "random_alg"
     sensor_range = 5
@@ -98,6 +98,7 @@ def main():
     coverages = np.zeros((4, t_total))
     runtimes = np.zeros((4, t_total))
     for idx, mode in enumerate(algorithms):
+        print(f"in mode {mode}")
         occ_sim = OccupancyGridSimulator(
             file_name, starting_pose=np.array([200.0, 500.0]), sensor_range=sensor_range
         )
@@ -115,14 +116,9 @@ def main():
             coverages[idx][timestep] = occ_sim.get_coverage()
             new_map = occ_sim.get_curr_map()
             if mode == "boundary_alg":
-                new_pose, outline_locations = find_random_outline_location(
-                    new_map, occ_sim.robot_pos_mask, occ_sim.circle_arr, 1
+                new_pose = find_random_outline_location(
+                    occ_sim.boundary_points, occ_sim.robot_pos_mask
                 )
-                # print("failed here: ")
-                # outline_locations_debug = outline_locations
-                if outline_locations is not None:
-                    occ_sim.update_outline_locations(outline_locations)
-
             elif mode == "random_alg":
                 new_pose = find_random_free_location(new_map, occ_sim.robot_pos_mask, 1)
             elif mode == "coverage_alg":
@@ -133,7 +129,7 @@ def main():
                 new_pose = find_max_coverage_max_boundary_location(
                     new_map,
                     occ_sim.robot_pos_mask,
-                    occ_sim.circle_arr,
+                    occ_sim.boundary_points,
                     sensor_range * 10,
                     1,
                 )
@@ -141,7 +137,6 @@ def main():
             occ_sim.save_img(f"../data/output/{mode}/{mode}_{timestep+1}.png")
             end = time.time()
             runtimes[idx][timestep] = end - start
-            # print(coverages)
 
     occ_sim.save_img(f"../data/output/{mode}_final.png")
 

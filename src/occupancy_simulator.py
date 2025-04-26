@@ -4,141 +4,37 @@ import os
 from pathlib import Path
 import logging
 import matplotlib.pyplot as plt
+from shapely.geometry import Polygon, MultiPolygon
 from tqdm import tqdm
 
 from config_parser import load_config
-
 from selection import (
     find_random_outline_location,
     find_random_free_location,
     find_max_coverage_location,
     find_max_coverage_max_boundary_location,
 )
+from simulation import alpha_shape, generate_circle_points, bresenham_line
 
-from shapely.geometry import Polygon, MultiPolygon
-from shapely.ops import unary_union, polygonize
-from scipy.spatial import Delaunay
-import matplotlib.pyplot as plt
 
 # Configure logger
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.INFO)
-# Create console handler and set level
 ch = logging.StreamHandler()
 ch.setLevel(logging.INFO)
-# Create formatter
 formatter = logging.Formatter("%(name)s - %(levelname)s - %(message)s")
-# Add formatter to ch
 ch.setFormatter(formatter)
-# Add ch to logger
 logger.addHandler(ch)
 
 vis = True  # debug
-
-
-def alpha_shape(points, alpha):
-    if len(points) < 4:
-        return Polygon(points)
-
-    tri = Delaunay(points)
-    edges = set()
-    edge_points = []
-
-    # Loop through each triangle
-    for ia, ib, ic in tri.simplices:
-        pa = points[ia]
-        pb = points[ib]
-        pc = points[ic]
-
-        # Compute length of triangle edges
-        a = np.linalg.norm(pa - pb)
-        b = np.linalg.norm(pb - pc)
-        c = np.linalg.norm(pc - pa)
-
-        # Calculate triangle area
-        s = (a + b + c) / 2.0
-        area = np.sqrt(s * (s - a) * (s - b) * (s - c))
-
-        # Circumradius
-        circum_r = a * b * c / (4.0 * area)
-
-        if circum_r < 1.0 / alpha:
-            edges.add((ia, ib))
-            edges.add((ib, ic))
-            edges.add((ic, ia))
-
-    for i, j in edges:
-        edge_points.append((tuple(points[i]), tuple(points[j])))
-
-    m = polygonize(edge_points)
-    return unary_union(list(m))
-
-
-def generate_circle_points(center, radius, num_points=360):
-    """generate points in a certain radius around a center point
-
-    Args:
-        center (np arr): (2,) array for center
-        radius (float): range of sensor
-        num_points (int, optional): Number of angles to check. Defaults to 360.
-
-    Returns:
-        np array: numpy array of points in the circle (360, 2) (x, y)
-    """
-    angles = np.linspace(0, 2 * np.pi, num_points, endpoint=False)
-    points = [
-        (center[0] + radius * np.cos(a), center[1] + radius * np.sin(a)) for a in angles
-    ]
-    circle_points = np.array(points)
-    return circle_points  # (360, 2)
-
-
-def bresenham_line(x0, y0, x1, y1):
-    """Code sourced from LidarMapper
-    Returns the grid cells between two points in the occupancy grid map using the Bresenham's line algorithm.
-
-    :param x0, y0: The coordinates of the first point.
-    :param x1, y1: The coordinates of the second point.
-
-    :return: A 2D array where each row represents the (x, y) coordinates of a cell in the occupancy
-            grid that lies on the line between the start and end point.
-            (N, 2)
-    """
-    points = []
-    dx = abs(x1 - x0)
-    dy = abs(y1 - y0)
-    x, y = x0, y0
-    sx = -1 if x0 > x1 else 1
-    sy = -1 if y0 > y1 else 1
-    if dx > dy:
-        err = dx / 2.0
-        while x != x1:
-            points.append((x, y))
-            err -= dy
-            if err < 0:
-                y += sy
-                err += dx
-            x += sx
-    else:
-        err = dy / 2.0
-        while y != y1:
-            points.append((x, y))
-            err -= dx
-            if err < 0:
-                x += sx
-                err += dy
-            y += sy
-    points.append((x, y))
-    return np.array(points)  # (m, 2) m = hit points
 
 
 class OccupancyGridSimulator:
     """Represents an occupancy grid simulator for robotic mapping."""
 
     def __init__(self, image_file, starting_pose, sensor_range):
-        # global map_vis  # debug
-
         self.gt_map = self.read_image(image_file)  # (y, x)
+        self.starting_pose = starting_pose
         self.robot_pos = starting_pose  # collection of all robots (x, y)
         self.current_robot_pos = starting_pose  # (x, y)
         self.robot_pos_mask = np.full(self.gt_map.shape, True, dtype=bool)
@@ -154,28 +50,30 @@ class OccupancyGridSimulator:
         # self.update_config_space()  # ensures robots are not too close to obstacle points
         c_pts = self.get_laser_readings(starting_pose)
 
+        plt.figure(figsize=(8, 4))
+
         # visualize
         if vis:
-            plt.figure(figsize=(8, 4))
-            height, width = self.gt_map.shape
-            plt.xlim(0, width)
-            plt.ylim(height, 0)
+            self.plot_visualization(c_pts)
 
-            self.plot_points(c_pts, "Edge of 2D Lidar", "b", 0.1)
-            plt.imshow(self.curr_map, cmap="gray_r")
-            plt.imshow(self.gt_map, cmap="gray_r", alpha=0.2)
-            plt.colorbar(shrink=0.7, pad=0.02)
+            # self.plot_points(c_pts, "Edge of 2D Lidar", "b", 0.1)
+            # plt.imshow(self.curr_map, cmap="gray_r")
+            # plt.imshow(self.gt_map, cmap="gray_r", alpha=0.2)
+            # plt.colorbar(shrink=0.7, pad=0.02)
 
-            self.plot_points(
-                self.current_robot_pos.reshape((1, 2)), "Current Robot", "r"
-            )
-            plt.title("Robot Position Map", fontsize=16, fontweight="bold")
-            plt.xlabel("X Position", fontsize=12)
-            plt.ylabel("Y Position", fontsize=12)
-            plt.tight_layout()
+            # self.plot_points(
+            #     self.current_robot_pos.reshape((1, 2)), "Current Robot", "r"
+            # )
+            # self.plot_points(self.starting_pose.reshape((1, 2)), "Anchor Node", "m")
+            # plt.title("Robot Position Map", fontsize=16, fontweight="bold")
+            # plt.xlim(0, self.map_w)
+            # plt.ylim(self.map_h, 0)
+            # plt.xlabel("X Position", fontsize=12)
+            # plt.ylabel("Y Position", fontsize=12)
+            # plt.tight_layout()
 
-            plt.legend(loc="upper right")
-            plt.pause(interval=0.1)
+            # # plt.legend(loc="upper right")
+            # plt.pause(interval=0.1)
 
     def read_image(self, file_name):
         """Reads an image and sets white to 0, grey to 0.5, and black to 1.0
@@ -195,16 +93,6 @@ class OccupancyGridSimulator:
         map = np.where(image != 0, map, 1.0)
 
         return map
-
-    def plot_test_map(self, map):
-        """plot the gt map for debugging
-
-        Args:
-            map (np array): gt map
-        """
-        # have to use gray_reverse for plotting this map
-        plt.imshow(map, cmap="gray_r")
-        plt.colorbar()
 
     def plot_points(self, points, label, color, point_size=5):
         """plot N points
@@ -290,7 +178,7 @@ class OccupancyGridSimulator:
             y - self.robot_radius * 4 : y + self.robot_radius * 4 + 1,
             x - self.robot_radius * 4 : x + self.robot_radius * 4 + 1,
         ] = False
-        # false is the robot ahs been there before
+        # false is the robot has been there before
 
     def update_config_space(self):
         obstacles = np.argwhere(self.gt_map == 1.0)  # (y, x)
@@ -330,20 +218,24 @@ class OccupancyGridSimulator:
         self.plot_points(self.robot_pos, "Previous Robot", "g")
         self.plot_points(self.current_robot_pos, "Current Robot", "r")
         self.plot_points(c_pts, "Edge of 2D Lidar", "b", 0.1)
+        self.plot_points(self.starting_pose.reshape((1, 2)), "Anchor Node", "m")
 
         # if you want to plot occupied robot space:
         # plt.imshow(self.robot_pos_mask, cmap="gray_r", alpha=0.2)
 
-        # if you want to plot boundaries
+        # if you want to plot boundaries:
         # bp = self.boundary_points.copy()
         # bp[:, [0, 1]] = bp[:, [1, 0]]
         # self.plot_points(bp, "boundary_points", "m", 0.01)
+
+        plt.xlim(0, self.map_w)
+        plt.ylim(self.map_h, 0)
 
         plt.title("Robot Position Map", fontsize=16, fontweight="bold")
         plt.xlabel("X Position", fontsize=12)
         plt.ylabel("Y Position", fontsize=12)
         plt.tight_layout()
-        plt.legend(loc="upper right")
+        # plt.legend(loc="upper right") # turn this off for animation
         plt.pause(interval=0.1)  # comment for speedup
 
     def get_curr_map(self):
@@ -375,7 +267,7 @@ def main():
     logger.info(f"Input map: {config['input']['input_map']}")
     file_name = parent_dir / config["input"]["input_map"]
     t_total = 100
-    sensor_range = 5
+    sensor_range = 10
 
     # occ_sim = OccupancyGridSimulator(file_name, starting_pose=np.array([800.0, 700.0]))
     occ_sim = OccupancyGridSimulator(

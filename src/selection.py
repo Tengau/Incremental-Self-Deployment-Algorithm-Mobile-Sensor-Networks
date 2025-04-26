@@ -2,12 +2,6 @@ import numpy as np
 import cv2
 import matplotlib.pyplot as plt
 
-
-# from pathlib import Path
-# from config_parser import load_config
-# import matplotlib.pyplot as plt
-# from scipy.spatial import ConvexHull, convex_hull_plot_2d
-
 curr_map = cv2.imread(
     "../data/input/isaac_sample_ros_nav_hospital_map.png", flags=cv2.IMREAD_GRAYSCALE
 )
@@ -75,7 +69,7 @@ def find_random_free_location(map, pose_mask, num_locations=1):
     return random_locations
 
 
-def mask_circle(map, cx, cy, r):
+def mask_circle(map, cx, cy, r=100):
     x = np.arange(0, map.shape[1])
     y = np.arange(0, map.shape[0])
 
@@ -147,7 +141,7 @@ def debug_plot_points(points, color, point_size=5):
 
 
 def find_max_coverage_max_boundary_location(
-    map, pose_mask, boundary_coords, sensor_range=50, num_locations=1
+    map, pose_mask, boundary_coords, sensor_range=100, num_locations=1
 ):
     """
     Find locations within the free space (white, value 0) of the map that maximizes coverage of unknown area and is on the boundary.
@@ -169,10 +163,6 @@ def find_max_coverage_max_boundary_location(
             or coord[0] >= map.shape[1]
             or not pose_mask[int(coord[0])][int(coord[1])]  # False = occupied
         ):
-            # print("------------------------")
-            # print("y, x", int(coord[1]), int(coord[0]))
-            # print(pose_mask[int(coord[1])][int(coord[0])])
-            # print("skip")
             continue
 
         # get area of free space around it?
@@ -192,9 +182,4 @@ def find_max_coverage_max_boundary_location(
             max_coverage_location = np.array(
                 [np.random.randint(0, map.shape[1]), np.random.randint(0, map.shape[0])]
             )
-
-    # print("-", max_coverage_location)
-    # print(max_coverage_location.shape)
-    # print(np.expand_dims(max_coverage_location, axis=0))
-    # print(np.expand_dims(max_coverage_location, axis=0).shape)
     return np.expand_dims(max_coverage_location, axis=0)

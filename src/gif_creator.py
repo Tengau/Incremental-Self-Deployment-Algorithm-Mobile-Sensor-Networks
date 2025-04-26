@@ -27,7 +27,7 @@ if __name__ == "__main__":
     parser.add_argument(
         "--interval",
         type=int,
-        default=500,
+        default=1000,
         help="Frame interval in ms (default: 500ms)",
     )
     args = parser.parse_args()
@@ -35,16 +35,13 @@ if __name__ == "__main__":
     pattern = os.path.join(args.input_dir, "*.png")
     files = sorted(glob.glob(pattern), key=natural_key)
 
-    # for file in files:
-    #     print(file)
-    # exit()
     if not files:
         raise FileNotFoundError(f"No PNG files found in directory: {args.input_dir}")
 
     print(f"Found {len(files)} PNG files.")
 
     image_array = [np.array(Image.open(f)) for f in files]
-    print("Loaded image_array with shape:", np.array(image_array).shape)
+    # print("Loaded image_array with shape:", np.array(image_array).shape)
 
     # Create figure and remove axes
     fig, ax = plt.subplots()

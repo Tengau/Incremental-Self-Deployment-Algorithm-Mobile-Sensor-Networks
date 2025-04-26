@@ -14,22 +14,17 @@ from selection import (
     find_random_outline_location,
     find_max_coverage_location,
     find_max_coverage_max_boundary_location,
-)  # , find_outline
+)
 
 
 # Configure logger
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.INFO)
-# Create console handler and set level
 ch = logging.StreamHandler()
 ch.setLevel(logging.INFO)
-# Create formatter
 formatter = logging.Formatter("%(name)s - %(levelname)s - %(message)s")
-# Add formatter to ch
 ch.setFormatter(formatter)
-# Add ch to logger
 logger.addHandler(ch)
-# Get the directory of the current script
 parent_dir = Path(__file__).resolve().parent.parent
 CONFIG_FILENAME = parent_dir / "config" / "config_test.yaml"
 
@@ -69,7 +64,7 @@ def plot_runtime_v_time(runtimes, t_total):
     plt.plot(x, runtimes[1, :], label="P2", marker="s")
     plt.plot(x, runtimes[2, :], label="P3", marker="^")
     plt.plot(x, runtimes[3, :], label="P4", marker="D")
-    plt.xlabel("Time (ts)")
+    plt.xlabel("Time (sec)")
     plt.ylabel("Deployed Nodes")
     plt.yscale("log")
     plt.xscale("log")
@@ -87,20 +82,20 @@ def main():
     logger.info(f"Parent directory: {parent_dir}")
     logger.info(f"Input map: {config['input']['input_map']}")
     file_name = parent_dir / config["input"]["input_map"]
-    t_total = 30
+    t_total = 50
     # occ_sim = OccupancyGridSimulator(file_name, starting_pose=np.array([800.0, 700.0]))
-    # algorithms = ["random_alg", "boundary_alg", "coverage_alg", "boundary_coverage_alg"]
-    algorithms = ["boundary_alg"]
+    algorithms = ["random_alg", "boundary_alg", "coverage_alg", "boundary_coverage_alg"]
+    # algorithms = ["boundary_alg"]
 
-    # mode = "random_alg"
     sensor_range = 5
+    starting_pose = np.array([800.0, 450.0])
 
     coverages = np.zeros((4, t_total))
     runtimes = np.zeros((4, t_total))
     for idx, mode in enumerate(algorithms):
         print(f"in mode {mode}")
         occ_sim = OccupancyGridSimulator(
-            file_name, starting_pose=np.array([200.0, 500.0]), sensor_range=sensor_range
+            file_name, starting_pose=starting_pose, sensor_range=sensor_range
         )
 
         # Run the simulation
@@ -142,7 +137,7 @@ def main():
 
     plot_coverage_v_time(coverages, t_total)
     np.savetxt(
-        f"../data/output/coverages_{t_total}_nodes_10m_sensor_range_hospital.csv",
+        f"../data/output/coverages_{starting_pose[0]}_{starting_pose[1]}_{t_total}_nodes_{sensor_range}m_sensor_range_hospital.csv",
         coverages,
         delimiter=",",
         fmt="%.3f",
@@ -154,7 +149,7 @@ def main():
     # update a flag for visualization
 
     np.savetxt(
-        f"../data/output/runtimes_{t_total}_nodes_{sensor_range}m_sensor_range_hospital.csv",
+        f"../data/output/runtimes_{starting_pose[0]}_{starting_pose[1]}_{t_total}_nodes_{sensor_range}m_sensor_range_hospital.csv",
         runtimes,
         delimiter=",",
         fmt="%.3f",
